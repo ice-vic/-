@@ -468,18 +468,20 @@
       }
     }
 
-    // 移动设备下载策略
+    // 移动设备下载策略 - 增强版
     async function downloadOnMobile(url, filename) {
       try {
         // 移动设备上尝试多种策略
-        // 策略1: 直接使用Blob方式（有些移动浏览器支持）
+        // 策略1: 增强的Blob方式下载
         try {
+          // 尝试使用Fetch API获取文件内容
           const response = await fetch(url, {
             method: 'GET',
             headers: {
               'User-Agent': getUserAgent(),
               'Referer': 'https://www.douyin.com/', // 使用抖音域名作为referer
-              'Accept': '*/*'
+              'Accept': '*/*',
+              'Connection': 'keep-alive'
             },
             mode: 'cors',
             cache: 'default',
@@ -496,40 +498,84 @@
           const link = document.createElement('a');
           link.href = blobUrl;
           link.download = filename;
-          // 在移动设备上，有些浏览器需要添加到DOM并设置样式可见
-          link.style.display = 'none';
+          // 移动设备特殊处理 - 不同浏览器可能需要不同的样式
+          link.style.display = 'block';
+          link.style.position = 'absolute';
+          link.style.left = '-9999px';
           document.body.appendChild(link);
           
-          // 针对移动设备的特殊处理
+          // 针对特定设备的特殊处理
           if (navigator.userAgent.match(/iPad|iPhone|iPod/)) {
-            // iOS设备可能需要特殊处理
+            // iOS设备需要特殊处理
             link.target = '_blank';
+            // iOS上强制触发下载可能需要用户交互，所以我们延迟一点
+            setTimeout(() => {
+              link.click();
+              showToast('iOS设备请手动保存视频');
+            }, 300);
+          } else if (navigator.userAgent.match(/Android/)) {
+            // 安卓设备尝试直接触发
+            // 这里使用连续点击增加成功率
+            link.click();
+            setTimeout(() => link.click(), 100);
+            showToast(`${filename} 开始下载`);
+          } else {
+            // 其他移动设备
+            link.click();
+            showToast(`${filename} 开始下载`);
           }
           
-          link.click();
-          
+          // 清理资源
           setTimeout(() => {
             document.body.removeChild(link);
             window.URL.revokeObjectURL(blobUrl);
-          }, 100);
+          }, 1000);
           
-          showToast(`${filename} 开始下载`);
           return;
         } catch (strategy1Error) {
           console.warn('策略1失败，尝试策略2:', strategy1Error);
         }
         
-        // 策略2: 使用iframe（某些移动浏览器更兼容）
+        // 策略2: 优化的iframe下载 + 主动触发
         try {
           const iframe = document.createElement('iframe');
           iframe.style.display = 'none';
-          iframe.src = url;
+          iframe.src = 'about:blank';
           document.body.appendChild(iframe);
           
-          // 2秒后移除iframe
+          // 等待iframe加载完成
           setTimeout(() => {
-            document.body.removeChild(iframe);
-          }, 2000);
+            try {
+              iframe.src = url;
+              // 同时尝试创建下载链接作为后备
+              const link = document.createElement('a');
+              link.href = url;
+              link.download = filename;
+              link.style.display = 'none';
+              document.body.appendChild(link);
+              link.click();
+              
+              setTimeout(() => {
+                document.body.removeChild(link);
+              }, 100);
+            } catch (e) {
+              console.warn('iframe策略内部错误:', e);
+            }
+          }, 100);
+          
+          // 3秒后检查状态并提供下一步指引
+          setTimeout(() => {
+            try {
+              document.body.removeChild(iframe);
+              // 如果用户没有看到下载提示，提供备用选项
+              showToast('视频准备完成，如未自动下载，请选择备用方案', 'info');
+              setTimeout(() => {
+                handleDownloadError(url, filename, new Error('需要用户选择下载方式'));
+              }, 2000);
+            } catch (e) {
+              console.warn('清理iframe时出错:', e);
+            }
+          }, 3000);
           
           showToast('请稍候，视频正在准备下载...');
           return;
@@ -537,9 +583,32 @@
           console.warn('策略2失败，尝试策略3:', strategy2Error);
         }
         
-        // 策略3: 直接打开新标签页（作为最后的选择）
-        window.open(url, '_blank');
-        showToast('已在新标签页打开视频，请手动保存');
+        // 策略3: 直接打开新标签页 + 下载指引
+        try {
+          const newWindow = window.open('', '_blank');
+          if (newWindow) {
+            // 先显示加载页面，再导航到视频URL
+            newWindow.document.write('<html><body style="background-color:#f0f0f0;text-align:center;padding:50px;"><h2>视频加载中...</h2><p>请点击视频右上角的下载按钮保存</p></body></html>');
+            newWindow.document.close();
+            setTimeout(() => {
+              try {
+                newWindow.location.href = url;
+              } catch (e) {
+                console.warn('无法导航到视频URL:', e);
+              }
+            }, 1000);
+            showToast('已在新标签页打开视频，请点击视频上的下载按钮保存');
+          } else {
+            // 如果弹窗被阻止，回退到提示复制链接
+            throw new Error('弹窗被阻止');
+          }
+          return;
+        } catch (strategy3Error) {
+          console.warn('策略3失败，尝试终极策略:', strategy3Error);
+        }
+        
+        // 终极策略: 直接提示用户选择备用方案
+        handleDownloadError(url, filename, new Error('所有自动下载策略都失败了'));
         
       } catch (error) {
         throw error;
