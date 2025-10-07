@@ -386,6 +386,38 @@
       return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     }
 
+    // 获取平台特定的Referer
+    function getReferer(url) {
+      // 根据目标URL猜测可能的来源平台
+      if (url.includes('douyin') || url.includes('tiktok')) {
+        return 'https://www.douyin.com/';
+      } else if (url.includes('kuaishou')) {
+        return 'https://www.kuaishou.com/';
+      } else if (url.includes('xiaohongshu')) {
+        return 'https://www.xiaohongshu.com/';
+      } else {
+        return 'https://www.example.com/';
+      }
+    }
+    
+    // 获取增强的HTTP请求头
+    function getEnhancedHeaders(url) {
+      return {
+        'User-Agent': getUserAgent(),
+        'Referer': getReferer(url),
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Cache-Control': 'max-age=0'
+      };
+    }
+    
     // 获取适合当前设备的User-Agent
     function getUserAgent() {
       if (isMobileDevice()) {
@@ -421,49 +453,118 @@
       }
     }
 
-    // 桌面设备下载策略
+    // 桌面设备下载策略 - 增强版
     async function downloadOnDesktop(url, filename) {
       try {
-        // 使用Fetch API获取文件内容
-        const response = await fetch(url, {
-          method: 'GET',
-          headers: {
-            'User-Agent': getUserAgent(),
-            'Referer': 'https://www.example.com/',
-            'Accept': '*/*'
-          },
-          mode: 'cors',
-          cache: 'default',
-          credentials: 'omit'
-        });
-        
-        if (!response.ok) {
-          throw new Error(`下载失败: HTTP ${response.status}`);
-        }
+        // 策略1: 使用增强的Fetch API获取文件内容
+        try {
+          const headers = getEnhancedHeaders(url);
+          const response = await fetch(url, {
+            method: 'GET',
+            headers: headers,
+            mode: 'cors',
+            cache: 'no-store',
+            credentials: 'omit',
+            redirect: 'follow',
+            referrerPolicy: 'unsafe-url'
+          });
+          
+          // 特别处理403错误
+          if (response.status === 403) {
+            throw new Error(`403 Forbidden错误，尝试备用策略`);
+          }
+          
+          if (!response.ok) {
+            throw new Error(`下载失败: HTTP ${response.status}`);
+          }
         
         // 将响应转换为Blob对象
-        const blob = await response.blob();
+          const blob = await response.blob();
+          
+          // 创建临时URL
+          const blobUrl = window.URL.createObjectURL(blob);
+          
+          // 创建下载链接并触发下载
+          const link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = filename;
+          link.style.display = 'none';
+          document.body.appendChild(link);
+          
+          // 在桌面端，使用多次点击增加成功率
+          link.click();
+          setTimeout(() => link.click(), 100);
+          
+          // 清理
+          setTimeout(() => {
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(blobUrl);
+          }, 100);
+          
+          showToast(`${filename} 下载成功`);
+          return;
+        } catch (strategy1Error) {
+          console.warn('策略1失败，尝试策略2:', strategy1Error);
+        }
         
-        // 创建临时URL
-        const blobUrl = window.URL.createObjectURL(blob);
+        // 策略2: 直接下载链接（绕过CORS限制）
+        try {
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = filename;
+          link.style.display = 'none';
+          document.body.appendChild(link);
+          
+          // 模拟用户点击
+          link.click();
+          
+          // 清理
+          setTimeout(() => {
+            document.body.removeChild(link);
+          }, 100);
+          
+          showToast(`${filename} 开始下载`);
+          return;
+        } catch (strategy2Error) {
+          console.warn('策略2失败，尝试策略3:', strategy2Error);
+        }
         
-        // 创建下载链接并触发下载
-        const link = document.createElement('a');
-        link.href = blobUrl;
-        link.download = filename;
-        document.body.appendChild(link);
-        // 在桌面端，模拟用户点击下载
-        link.click();
+        // 策略3: 使用iframe作为备用
+        try {
+          const iframe = document.createElement('iframe');
+          iframe.style.display = 'none';
+          iframe.src = url;
+          iframe.download = filename;
+          document.body.appendChild(iframe);
+          
+          // 设置定时器清理iframe
+          setTimeout(() => {
+            try {
+              document.body.removeChild(iframe);
+            } catch (e) {
+              console.warn('清理iframe时出错:', e);
+            }
+          }, 30000);
+          
+          showToast('正在通过iframe尝试下载，请稍候...');
+          return;
+        } catch (strategy3Error) {
+          console.warn('策略3失败，尝试终极策略:', strategy3Error);
+        }
         
-        // 清理
-        setTimeout(() => {
-          document.body.removeChild(link);
-          window.URL.revokeObjectURL(blobUrl);
-        }, 100);
-        
-        showToast(`${filename} 下载成功`);
+        // 终极策略: 新标签页打开
+        try {
+          const newWindow = window.open(url, '_blank');
+          if (newWindow) {
+            showToast('已在新标签页打开，请手动保存视频');
+          } else {
+            throw new Error('无法打开新标签页');
+          }
+        } catch (finalError) {
+          console.warn('所有策略都失败:', finalError);
+          throw finalError;
+        }
       } catch (error) {
-        // 如果桌面端特定策略失败，回退到通用处理
         throw error;
       }
     }
@@ -475,17 +576,14 @@
         // 策略1: 增强的Blob方式下载
         try {
           // 尝试使用Fetch API获取文件内容
+          const headers = getEnhancedHeaders(url);
           const response = await fetch(url, {
             method: 'GET',
-            headers: {
-              'User-Agent': getUserAgent(),
-              'Referer': 'https://www.douyin.com/', // 使用抖音域名作为referer
-              'Accept': '*/*',
-              'Connection': 'keep-alive'
-            },
+            headers: headers,
             mode: 'cors',
-            cache: 'default',
-            credentials: 'omit'
+            cache: 'no-store',
+            credentials: 'omit',
+            redirect: 'follow'
           });
           
           if (!response.ok) {
@@ -615,45 +713,107 @@
       }
     }
 
-    // 处理下载错误
-    function handleDownloadError(url, filename, error) {
-      showToast(`下载失败: ${error.message || '未知错误'}`, 'error');
-      
-      // 提供多种备用下载方案
-      const options = [
-        { name: '尝试直接下载', action: () => {
-          const link = document.createElement('a');
-          link.href = url;
-          link.download = filename;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-        }},
-        { name: '在新标签页打开', action: () => window.open(url, '_blank')},
-        { name: '复制下载链接', action: async () => {
-          try {
-            await navigator.clipboard.writeText(url);
-            showToast('下载链接已复制到剪贴板');
-          } catch (err) {
-            // 降级方案
-            prompt('请手动复制下载链接:', url);
+    // 处理下载错误 - 增强版
+        function handleDownloadError(url, filename, error) {
+          console.error('下载错误:', error);
+          
+          // 检测是否是403错误并提供专门处理
+          if (error.message.includes('403')) {
+            showToast('下载被拒绝，正在尝试绕过限制...', 'error');
+            
+            // 策略1: 使用不同的请求头重试
+            setTimeout(async () => {
+              try {
+                const alternativeHeaders = getEnhancedHeaders(url);
+                // 添加一些额外的绕过403的头信息
+                alternativeHeaders['X-Forwarded-For'] = '127.0.0.1';
+                alternativeHeaders['X-Requested-With'] = 'XMLHttpRequest';
+                
+                const response = await fetch(url, {
+                  method: 'GET',
+                  headers: alternativeHeaders,
+                  mode: 'cors',
+                  cache: 'no-store',
+                  credentials: 'omit'
+                });
+                
+                if (response.ok) {
+                  const blob = await response.blob();
+                  const blobUrl = window.URL.createObjectURL(blob);
+                  const link = document.createElement('a');
+                  link.href = blobUrl;
+                  link.download = filename;
+                  document.body.appendChild(link);
+                  link.click();
+                  
+                  setTimeout(() => {
+                    document.body.removeChild(link);
+                    window.URL.revokeObjectURL(blobUrl);
+                  }, 100);
+                }
+              } catch (e) {
+                console.warn('绕过403策略失败:', e);
+              }
+            }, 1500);
+          } else {
+            showToast(`下载失败，请稍后再试`, 'error');
           }
-        }}
-      ];
-      
-      // 显示备用选项
-      let message = '自动下载失败，选择以下方式尝试：\n';
-      options.forEach((opt, index) => {
-        message += `${index + 1}. ${opt.name}\n`;
-      });
-      
-      const choice = prompt(message, '1');
-      const optionIndex = parseInt(choice) - 1;
-      
-      if (!isNaN(optionIndex) && optionIndex >= 0 && optionIndex < options.length) {
-        options[optionIndex].action();
-      }
-    }
+          
+          // 策略2: 自动尝试直接下载作为后备
+          try {
+            setTimeout(() => {
+              const link = document.createElement('a');
+              link.href = url;
+              link.download = filename;
+              link.style.display = 'none';
+              document.body.appendChild(link);
+              link.click();
+              setTimeout(() => document.body.removeChild(link), 100);
+            }, 1000);
+          } catch (e) {
+            // 忽略错误
+          }
+          
+          // 策略3: 3秒后尝试iframe下载
+          try {
+            setTimeout(() => {
+              const iframe = document.createElement('iframe');
+              iframe.style.display = 'none';
+              iframe.src = url;
+              document.body.appendChild(iframe);
+              setTimeout(() => {
+                try { document.body.removeChild(iframe); } catch (e) {}
+              }, 10000);
+            }, 3000);
+          } catch (e) {
+            // 忽略错误
+          }
+          
+          // 策略4: 5秒后尝试在新标签页打开
+          setTimeout(() => {
+            try {
+              window.open(url, '_blank');
+              showToast('已在新标签页打开资源，请手动保存', 'info');
+            } catch (e) {
+              // 忽略错误
+            }
+          }, 5000);
+          
+          // 策略5: 8秒后再次尝试直接下载（最后的努力）
+          setTimeout(() => {
+            try {
+              const link = document.createElement('a');
+              link.href = url;
+              link.download = filename;
+              link.style.display = 'none';
+              document.body.appendChild(link);
+              link.click();
+              setTimeout(() => document.body.removeChild(link), 100);
+            } catch (e) {
+              // 忽略错误
+            }
+          }, 8000);
+        }
 
     // 显示加载状态
     function showLoading(text = '处理中...') {
