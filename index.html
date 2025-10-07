@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>视频去水印下载工具</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+  
+  <!-- Tailwind CSS 配置 -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#3B82F6',
+            secondary: '#10B981',
+            accent: '#6366F1',
+            dark: '#1E293B',
+            light: '#F1F5F9'
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif']
+          },
+          boxShadow: {
+            'custom': '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+            'hover': '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+          }
+        }
+      }
+    }
+  </script>
+  
+  <style type="text/tailwindcss">
+    @layer utilities {
+      .content-auto {
+        content-visibility: auto;
+      }
+      .bg-gradient-blue {
+        background: linear-gradient(135deg, #3B82F6 0%, #6366F1 100%);
+      }
+      .text-shadow {
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      .transition-custom {
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+    }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen font-sans text-dark">
+  <!-- 顶部导航栏 -->
+  <header class="bg-white shadow-sm sticky top-0 z-50">
+    <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+      <div class="flex items-center space-x-2">
+        <i class="fa fa-download text-primary text-2xl"></i>
+        <h1 class="text-xl md:text-2xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">视频去水印下载工具</h1>
+      </div>
+      <div class="hidden md:flex items-center space-x-4">
+        <button id="theme-toggle" class="p-2 rounded-full hover:bg-gray-100 transition-custom">
+          <i class="fa fa-moon-o text-gray-600"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 主内容区 -->
+  <main class="container mx-auto px-4 py-8">
+    <!-- 密码验证模态框 -->
+    <div id="password-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div class="bg-white rounded-xl shadow-custom p-8 max-w-md w-full mx-4 transform transition-all">
+        <div class="text-center mb-6">
+          <i class="fa fa-lock text-4xl text-primary mb-4"></i>
+          <h2 class="text-2xl font-bold text-dark">请输入访问密码</h2>
+          <p class="text-gray-500 mt-2">该工具需要密码验证才能使用</p>
+        </div>
+        <div class="space-y-4">
+          <div>
+            <label for="password" class="block text-sm font-medium text-gray-700 mb-1">密码</label>
+            <input 
+              type="password" 
+              id="password" 
+              class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-primary focus:border-primary transition-custom"
+              placeholder="请输入密码"
+              autocomplete="off"
+            >
+          </div>
+          <p id="password-error" class="text-red-500 text-sm hidden">密码错误，请重试</p>
+          <button 
+            id="password-submit" 
+            class="w-full bg-gradient-blue text-white font-medium py-3 px-4 rounded-lg hover:shadow-lg transition-custom flex items-center justify-center"
+          >
+            <i class="fa fa-sign-in mr-2"></i>
+            验证并进入
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 工具容器 -->
+    <div id="tool-container" class="max-w-4xl mx-auto bg-white rounded-xl shadow-custom p-6 md:p-8 mb-8 hidden">
+      <!-- 输入区域 -->
+      <div class="mb-8">
+        <h2 class="text-xl md:text-2xl font-bold mb-4 flex items-center">
+          <i class="fa fa-link text-primary mr-2"></i>
+          粘贴视频链接
+        </h2>
+        <div class="space-y-4">
+          <textarea 
+            id="link-input" 
+            class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-primary focus:border-primary transition-custom h-24 resize-none" 
+            placeholder="请粘贴抖音等平台的视频分享链接，例如：https://v.douyin.com/wVUP-mWgO4o/"
+          ></textarea>
+          <div class="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3">
+            <button 
+              id="parse-btn" 
+              class="flex-1 bg-gradient-blue text-white font-medium py-3 px-4 rounded-lg hover:shadow-lg transition-custom flex items-center justify-center"
+            >
+              <i class="fa fa-search mr-2"></i>
+              开始解析
+            </button>
+            <button 
+              id="clear-btn" 
+              class="px-4 py-3 bg-gray-200 text-gray-700 font-medium rounded-lg hover:bg-gray-300 transition-custom flex items-center justify-center"
+            >
+              <i class="fa fa-trash mr-2"></i>
+              清空
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 解析结果区域 -->
+      <div id="result-container" class="hidden">
+        <div class="border-t border-gray-200 pt-6">
+          <h2 class="text-xl font-bold mb-4 flex items-center">
+            <i class="fa fa-check-circle text-secondary mr-2"></i>
+            解析结果
+          </h2>
+          
+          <!-- 标题 -->
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-1">标题</label>
+            <p id="video-title" class="text-gray-800 bg-gray-50 p-3 rounded-lg word-break-all"></p>
+          </div>
+
+          <!-- 封面预览 -->
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-1">封面预览</label>
+            <div id="cover-preview" class="bg-gray-50 p-4 rounded-lg flex justify-center items-center min-h-[150px]">
+              <img id="cover-img" class="max-w-full max-h-[300px] rounded-lg shadow-sm hidden" alt="视频封面">
+              <div id="cover-placeholder" class="text-gray-400 flex flex-col items-center justify-center">
+                <i class="fa fa-picture-o text-4xl mb-2"></i>
+                <span>封面预览区域</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 下载按钮 -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+            <button 
+              id="download-video" 
+              class="bg-secondary text-white font-medium py-3 px-4 rounded-lg hover:shadow-lg transition-custom flex items-center justify-center"
+            >
+              <i class="fa fa-video-camera mr-2"></i>
+              下载视频
+            </button>
+            <button 
+              id="download-cover" 
+              class="bg-accent text-white font-medium py-3 px-4 rounded-lg hover:shadow-lg transition-custom flex items-center justify-center"
+            >
+              <i class="fa fa-download mr-2"></i>
+              下载封面
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 特性介绍 -->
+    <div id="features" class="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 mb-12 hidden">
+      <div class="bg-white p-6 rounded-xl shadow-custom hover:shadow-hover transition-custom">
+        <div class="text-primary text-3xl mb-4">
+          <i class="fa fa-magic"></i>
+        </div>
+        <h3 class="text-lg font-bold mb-2">无水印下载</h3>
+        <p class="text-gray-600">一键解析并下载无水印视频，保留最佳画质体验</p>
+      </div>
+      <div class="bg-white p-6 rounded-xl shadow-custom hover:shadow-hover transition-custom">
+        <div class="text-primary text-3xl mb-4">
+          <i class="fa fa-bolt"></i>
+        </div>
+        <h3 class="text-lg font-bold mb-2">快速解析</h3>
+        <p class="text-gray-600">高效的视频解析技术，瞬间获取视频资源</p>
+      </div>
+      <div class="bg-white p-6 rounded-xl shadow-custom hover:shadow-hover transition-custom">
+        <div class="text-primary text-3xl mb-4">
+          <i class="fa fa-mobile"></i>
+        </div>
+        <h3 class="text-lg font-bold mb-2">全平台支持</h3>
+        <p class="text-gray-600">适配各种设备，在手机、平板和电脑上都能流畅使用</p>
+      </div>
+    </div>
+  </main>
+
+  <!-- 页脚 -->
+  <footer class="bg-dark text-white py-8">
+    <div class="container mx-auto px-4">
+      <div class="flex flex-col md:flex-row justify-between items-center">
+        <div class="mb-4 md:mb-0">
+          <div class="flex items-center space-x-2 mb-2">
+            <i class="fa fa-download text-primary text-xl"></i>
+            <span class="text-lg font-bold">视频去水印下载工具</span>
+          </div>
+          <p class="text-gray-400 text-sm">便捷的视频下载解决方案</p>
+        </div>
+        <div class="flex space-x-4">
+          <a href="#" class="text-gray-400 hover:text-white transition-custom">
+            <i class="fa fa-github text-xl"></i>
+          </a>
+          <a href="#" class="text-gray-400 hover:text-white transition-custom">
+            <i class="fa fa-twitter text-xl"></i>
+          </a>
+          <a href="#" class="text-gray-400 hover:text-white transition-custom">
+            <i class="fa fa-envelope text-xl"></i>
+          </a>
+        </div>
+      </div>
+      <div class="border-t border-gray-700 mt-6 pt-6 text-center text-gray-400 text-sm">
+        <p>© 2023 视频去水印下载工具 版权所有</p>
+        <p class="mt-1">本工具仅用于个人学习和研究，请勿用于商业用途</p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- 加载中动画 -->
+  <div id="loading" class="fixed inset-0 bg-black/30 flex items-center justify-center z-50 hidden">
+    <div class="bg-white p-6 rounded-xl shadow-custom flex flex-col items-center">
+      <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div>
+      <p id="loading-text" class="text-gray-700">正在解析视频链接...</p>
+    </div>
+  </div>
+
+  <!-- 成功提示 -->
+  <div id="toast" class="fixed bottom-5 right-5 bg-green-500 text-white px-4 py-3 rounded-lg shadow-custom transform translate-y-20 opacity-0 transition-all z-50 flex items-center">
+    <i class="fa fa-check-circle mr-2"></i>
+    <span id="toast-message">操作成功</span>
+  </div>
+
+  <!-- JavaScript -->
+  <script>
+    // DOM元素
+    const passwordModal = document.getElementById('password-modal');
+    const passwordInput = document.getElementById('password');
+    const passwordSubmit = document.getElementById('password-submit');
+    const passwordError = document.getElementById('password-error');
+    const toolContainer = document.getElementById('tool-container');
+    const features = document.getElementById('features');
+    const linkInput = document.getElementById('link-input');
+    const parseBtn = document.getElementById('parse-btn');
+    const clearBtn = document.getElementById('clear-btn');
+    const resultContainer = document.getElementById('result-container');
+    const videoTitle = document.getElementById('video-title');
+    const coverImg = document.getElementById('cover-img');
+    const coverPlaceholder = document.getElementById('cover-placeholder');
+    const downloadVideo = document.getElementById('download-video');
+    const downloadCover = document.getElementById('download-cover');
+    const loading = document.getElementById('loading');
+    const loadingText = document.getElementById('loading-text');
+    const toast = document.getElementById('toast');
+    const toastMessage = document.getElementById('toast-message');
+    const themeToggle = document.getElementById('theme-toggle');
+
+    // 存储解析结果
+    let parseResult = null;
+
+    // 密码验证
+    passwordSubmit.addEventListener('click', () => {
+      const password = passwordInput.value.trim();
+      if (password === '123456') {
+        passwordModal.classList.add('hidden');
+        toolContainer.classList.remove('hidden');
+        features.classList.remove('hidden');
+        showToast('验证成功，欢迎使用视频去水印工具！');
+      } else {
+        passwordError.classList.remove('hidden');
+        passwordInput.classList.add('border-red-500');
+        setTimeout(() => {
+          passwordError.classList.add('hidden');
+          passwordInput.classList.remove('border-red-500');
+        }, 3000);
+      }
+    });
+
+    // 按Enter键验证密码
+    passwordInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        passwordSubmit.click();
+      }
+    });
+
+    // 解析链接
+    parseBtn.addEventListener('click', async () => {
+      const link = linkInput.value.trim();
+      if (!link) {
+        showToast('请输入视频链接', 'error');
+        return;
+      }
+
+      // 提取有效的URL
+      const urlMatch = link.match(/(https?:\/\/[^\s]+)/);
+      const validUrl = urlMatch ? urlMatch[0] : link;
+
+      // 显示加载状态
+      showLoading('正在解析视频链接...');
+
+      try {
+        // 调用API解析链接
+        const apiUrl = `https://api.guijianpan.com/waterRemoveDetail/xxmQsyByAk?ak=c5570644deea4842a4ac30ac9f02aa93&link=${encodeURIComponent(validUrl)}`;
+        const response = await fetch(apiUrl);
+        const data = await response.json();
+
+        // 隐藏加载状态
+        hideLoading();
+
+        if (data.code === '10000' && data.content && data.content.success) {
+          parseResult = data.content;
+          displayResult(parseResult);
+          showToast('解析成功');
+        } else {
+          showToast('解析失败，请检查链接是否正确', 'error');
+        }
+      } catch (error) {
+        hideLoading();
+        showToast('网络错误，请重试', 'error');
+        console.error('解析错误:', error);
+      }
+    });
+
+    // 清空输入
+    clearBtn.addEventListener('click', () => {
+      linkInput.value = '';
+      resultContainer.classList.add('hidden');
+      parseResult = null;
+    });
+
+    // 下载视频
+    downloadVideo.addEventListener('click', async () => {
+      if (parseResult && parseResult.url) {
+        const url = parseResult.url.trim();
+        const title = parseResult.title ? parseResult.title.replace(/[\\/:*?"<>|]/g, '') : 'video';
+        await downloadFile(url, `${title}.mp4`);
+      }
+    });
+
+    // 下载封面
+    downloadCover.addEventListener('click', async () => {
+      if (parseResult && parseResult.cover) {
+        const url = parseResult.cover.trim();
+        const title = parseResult.title ? parseResult.title.replace(/[\\/:*?"<>|]/g, '') : 'cover';
+        await downloadFile(url, `${title}_cover.jpg`);
+      }
+    });
+
+    // 显示解析结果
+    function displayResult(data) {
+      videoTitle.textContent = data.title || '无标题';
+      
+      if (data.cover) {
+        coverImg.src = data.cover.trim();
+        coverImg.classList.remove('hidden');
+        coverPlaceholder.classList.add('hidden');
+      } else {
+        coverImg.classList.add('hidden');
+        coverPlaceholder.classList.remove('hidden');
+      }
+      
+      resultContainer.classList.remove('hidden');
+      
+      // 滚动到结果区域
+      resultContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    // 下载文件 - 使用Fetch API和Blob对象的方式，解决403 Forbidden问题
+    async function downloadFile(url, filename) {
+      showLoading(`正在准备${filename}...`);
+      
+      try {
+        // 使用Fetch API获取文件内容
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
+            'Referer': 'https://www.example.com/' // 添加Referer头模拟正常访问
+          },
+          mode: 'cors',
+          cache: 'default'
+        });
+        
+        if (!response.ok) {
+          throw new Error(`下载失败: HTTP ${response.status}`);
+        }
+        
+        // 将响应转换为Blob对象
+        const blob = await response.blob();
+        
+        // 创建临时URL
+        const blobUrl = window.URL.createObjectURL(blob);
+        
+        // 创建下载链接并触发下载
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        
+        // 清理
+        setTimeout(() => {
+          document.body.removeChild(link);
+          window.URL.revokeObjectURL(blobUrl);
+        }, 100);
+        
+        hideLoading();
+      } catch (error) {
+        hideLoading();
+        console.error('下载错误:', error);
+        
+        // 如果Fetch API失败，尝试回退到原始方法
+        try {
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = filename;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        } catch (fallbackError) {
+          showToast(`下载失败: ${error.message || '未知错误'}`, 'error');
+          // 提供备用下载方案 - 显示链接让用户手动复制
+          if (confirm('自动下载失败，是否打开新标签页尝试手动下载？')) {
+            window.open(url, '_blank');
+          }
+        }
+      }
+    }
+
+    // 显示加载状态
+    function showLoading(text = '处理中...') {
+      loadingText.textContent = text;
+      loading.classList.remove('hidden');
+    }
+
+    // 隐藏加载状态
+    function hideLoading() {
+      loading.classList.add('hidden');
+    }
+
+    // 显示提示信息
+    function showToast(message, type = 'success') {
+      toastMessage.textContent = message;
+      
+      if (type === 'error') {
+        toast.classList.remove('bg-green-500');
+        toast.classList.add('bg-red-500');
+      } else {
+        toast.classList.remove('bg-red-500');
+        toast.classList.add('bg-green-500');
+      }
+      
+      toast.classList.remove('translate-y-20', 'opacity-0');
+      
+      setTimeout(() => {
+        toast.classList.add('translate-y-20', 'opacity-0');
+      }, 3000);
+    }
+
+    // 主题切换（简单实现）
+    themeToggle.addEventListener('click', () => {
+      document.body.classList.toggle('dark-mode');
+      const icon = themeToggle.querySelector('i');
+      if (icon.classList.contains('fa-moon-o')) {
+        icon.classList.remove('fa-moon-o');
+        icon.classList.add('fa-sun-o');
+      } else {
+        icon.classList.remove('fa-sun-o');
+        icon.classList.add('fa-moon-o');
+      }
+    });
+
+    // 初始化
+    function init() {
+      // 尝试从URL参数中获取链接
+      const urlParams = new URLSearchParams(window.location.search);
+      const link = urlParams.get('link');
+      if (link) {
+        linkInput.value = link;
+      }
+    }
+
+    // 页面加载完成后初始化
+    window.addEventListener('load', init);
+  </script>
+</body>
+</html>
