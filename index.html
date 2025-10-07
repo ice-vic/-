@@ -381,20 +381,60 @@
       resultContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
-    // 下载文件 - 使用Fetch API和Blob对象的方式，解决403 Forbidden问题
+    // 检测设备类型
+    function isMobileDevice() {
+      return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    }
+
+    // 获取适合当前设备的User-Agent
+    function getUserAgent() {
+      if (isMobileDevice()) {
+        // 移动设备的User-Agent
+        return 'Mozilla/5.0 (Linux; Android 10; SM-G975F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36';
+      } else {
+        // 桌面设备的User-Agent
+        return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36';
+      }
+    }
+
+    // 下载文件 - 增强版，支持移动设备
     async function downloadFile(url, filename) {
       showLoading(`正在准备${filename}...`);
       
+      try {
+        // 根据设备类型选择不同的下载策略
+        if (isMobileDevice()) {
+          // 移动设备策略
+          await downloadOnMobile(url, filename);
+        } else {
+          // 桌面设备策略
+          await downloadOnDesktop(url, filename);
+        }
+        
+        hideLoading();
+      } catch (error) {
+        hideLoading();
+        console.error('下载错误:', error);
+        
+        // 通用错误处理和回退方案
+        handleDownloadError(url, filename, error);
+      }
+    }
+
+    // 桌面设备下载策略
+    async function downloadOnDesktop(url, filename) {
       try {
         // 使用Fetch API获取文件内容
         const response = await fetch(url, {
           method: 'GET',
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
-            'Referer': 'https://www.example.com/' // 添加Referer头模拟正常访问
+            'User-Agent': getUserAgent(),
+            'Referer': 'https://www.example.com/',
+            'Accept': '*/*'
           },
           mode: 'cors',
-          cache: 'default'
+          cache: 'default',
+          credentials: 'omit'
         });
         
         if (!response.ok) {
@@ -412,6 +452,7 @@
         link.href = blobUrl;
         link.download = filename;
         document.body.appendChild(link);
+        // 在桌面端，模拟用户点击下载
         link.click();
         
         // 清理
@@ -420,26 +461,128 @@
           window.URL.revokeObjectURL(blobUrl);
         }, 100);
         
-        hideLoading();
+        showToast(`${filename} 下载成功`);
       } catch (error) {
-        hideLoading();
-        console.error('下载错误:', error);
-        
-        // 如果Fetch API失败，尝试回退到原始方法
+        // 如果桌面端特定策略失败，回退到通用处理
+        throw error;
+      }
+    }
+
+    // 移动设备下载策略
+    async function downloadOnMobile(url, filename) {
+      try {
+        // 移动设备上尝试多种策略
+        // 策略1: 直接使用Blob方式（有些移动浏览器支持）
         try {
+          const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+              'User-Agent': getUserAgent(),
+              'Referer': 'https://www.douyin.com/', // 使用抖音域名作为referer
+              'Accept': '*/*'
+            },
+            mode: 'cors',
+            cache: 'default',
+            credentials: 'omit'
+          });
+          
+          if (!response.ok) {
+            throw new Error(`策略1失败: HTTP ${response.status}`);
+          }
+          
+          const blob = await response.blob();
+          const blobUrl = window.URL.createObjectURL(blob);
+          
+          const link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = filename;
+          // 在移动设备上，有些浏览器需要添加到DOM并设置样式可见
+          link.style.display = 'none';
+          document.body.appendChild(link);
+          
+          // 针对移动设备的特殊处理
+          if (navigator.userAgent.match(/iPad|iPhone|iPod/)) {
+            // iOS设备可能需要特殊处理
+            link.target = '_blank';
+          }
+          
+          link.click();
+          
+          setTimeout(() => {
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(blobUrl);
+          }, 100);
+          
+          showToast(`${filename} 开始下载`);
+          return;
+        } catch (strategy1Error) {
+          console.warn('策略1失败，尝试策略2:', strategy1Error);
+        }
+        
+        // 策略2: 使用iframe（某些移动浏览器更兼容）
+        try {
+          const iframe = document.createElement('iframe');
+          iframe.style.display = 'none';
+          iframe.src = url;
+          document.body.appendChild(iframe);
+          
+          // 2秒后移除iframe
+          setTimeout(() => {
+            document.body.removeChild(iframe);
+          }, 2000);
+          
+          showToast('请稍候，视频正在准备下载...');
+          return;
+        } catch (strategy2Error) {
+          console.warn('策略2失败，尝试策略3:', strategy2Error);
+        }
+        
+        // 策略3: 直接打开新标签页（作为最后的选择）
+        window.open(url, '_blank');
+        showToast('已在新标签页打开视频，请手动保存');
+        
+      } catch (error) {
+        throw error;
+      }
+    }
+
+    // 处理下载错误
+    function handleDownloadError(url, filename, error) {
+      showToast(`下载失败: ${error.message || '未知错误'}`, 'error');
+      
+      // 提供多种备用下载方案
+      const options = [
+        { name: '尝试直接下载', action: () => {
           const link = document.createElement('a');
           link.href = url;
           link.download = filename;
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
-        } catch (fallbackError) {
-          showToast(`下载失败: ${error.message || '未知错误'}`, 'error');
-          // 提供备用下载方案 - 显示链接让用户手动复制
-          if (confirm('自动下载失败，是否打开新标签页尝试手动下载？')) {
-            window.open(url, '_blank');
+        }},
+        { name: '在新标签页打开', action: () => window.open(url, '_blank')},
+        { name: '复制下载链接', action: async () => {
+          try {
+            await navigator.clipboard.writeText(url);
+            showToast('下载链接已复制到剪贴板');
+          } catch (err) {
+            // 降级方案
+            prompt('请手动复制下载链接:', url);
           }
-        }
+        }}
+      ];
+      
+      // 显示备用选项
+      let message = '自动下载失败，选择以下方式尝试：\n';
+      options.forEach((opt, index) => {
+        message += `${index + 1}. ${opt.name}\n`;
+      });
+      
+      const choice = prompt(message, '1');
+      const optionIndex = parseInt(choice) - 1;
+      
+      if (!isNaN(optionIndex) && optionIndex >= 0 && optionIndex < options.length) {
+        options[optionIndex].action();
       }
     }
 
